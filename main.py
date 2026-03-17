@@ -11,16 +11,11 @@ FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
 FB_VERIFY_TOKEN = "my_secret_bot_token"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Gemini Setup (Library အဟောင်းပုံစံဖြင့် ပြင်ထားသည်)
+# Gemini Setup (တည်ငြိမ်သော Library အဟောင်းပုံစံ)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
-    system_instruction="""
-မင်းရဲ့အမည်က 'Akari - ဧကရီ' (Akari Life Wear) Online Store ရဲ့ အမျိုးသမီးအရောင်းဝန်ထမ်း ဖြစ်ပါတယ်။
-1. Customer က 'နေကောင်းလား' လို့မေးရင် 'နေကောင်းပါတယ်ရှင်။ Akari - ဧကရီ ကူညီပေးပါရစေရှင်' လို့ပဲ ဖြေပါ။
-2. စကားလုံးတိုင်းမှာ 'ရှင်/ရှင့်' ကို မပျက်မကွက် ထည့်သုံးပါ။
-3. ညဝတ်အင်္ကျီ၊ စက်ပန်းထိုးထည်နှင့် ချိတ်ထဘီများ ရောင်းသည်။
-"""
+    system_instruction="မင်းရဲ့အမည်က 'Akari - ဧကရီ' ဖြစ်ပါတယ်။ ယဉ်ကျေးပျူငှာသော အရောင်းဝန်ထမ်းအဖြစ် ရှင်/ရှင့် သုံးပြီး ဖြေပေးပါ။"
 )
 
 paused_conversations = {}
@@ -44,6 +39,7 @@ def webhook():
                     message = messaging_event["message"]
                     user_text = message.get("text")
                     
+                    # Admin ဝင်ဖြေလျှင် ခေတ္တရပ်ရန်
                     is_admin = sender_id == recipient_id or "is_echo" in message
                     if is_admin:
                         actual_customer_id = messaging_event.get("recipient", {}).get("id")
@@ -57,12 +53,12 @@ def webhook():
                             continue
 
                         try:
-                            # ဤနေရာတွင် ခေါ်ယူပုံစံ ပြောင်းလဲထားသည်
+                            # ဤနေရာတွင် Generation လုပ်ဆောင်ပုံ ပြောင်းထားသည်
                             response = model.generate_content(user_text)
                             reply_text = response.text
                         except Exception as e:
                             print(f"Gemini API Error: {e}")
-                            reply_text = "တောင်းပန်ပါတယ်ရှင်။ စနစ်အနည်းငယ် ကြန့်ကြာနေလို့ ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။"
+                            reply_text = "စနစ်အနည်းငယ် ကြန့်ကြာနေလို့ ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။"
 
                         send_message(sender_id, reply_text)
     return "ok", 200
