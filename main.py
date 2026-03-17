@@ -7,16 +7,19 @@ from google import genai
 app = Flask(__name__)
 
 # --- Configuration ---
+# Render Environment Variables ထဲတွင် ဖြည့်သွင်းထားသော အချက်အလက်များ
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
 FB_VERIFY_TOKEN = "my_secret_bot_token"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+# Gemini Client ကို Gemini 1.5 Flash အတွက် သတ်မှတ်ခြင်း
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Admin ဝင်ဖြေထားသော conversation များကို မှတ်ထားရန်
+# Admin ဝင်ဖြေထားသော conversation များကို မှတ်ထားရန် ယာယီမှတ်ဉာဏ်
+# { sender_id: timestamp_of_last_admin_message }
 paused_conversations = {}
 
-# ပိုမိုတိကျသော အရောင်းဝန်ထမ်း Instruction
+# အကာရီ ဧကရီ အတွက် အရောင်းဝန်ထမ်း Instruction
 AKARI_INSTRUCTION = """
 မင်းရဲ့အမည်က 'Akari - ဧကရီ' (Akari Life Wear) Online Store ရဲ့ အမျိုးသမီးအရောင်းဝန်ထမ်း ဖြစ်ပါတယ်။
 
@@ -47,45 +50,56 @@ def webhook():
                 if messaging_event.get("message"):
                     message = messaging_event["message"]
                     user_text = message.get("text")
+                    
+                    # Admin (ကိုယ်တိုင်) က Inbox ထဲကနေ စာပြန်နေခြင်း ရှိမရှိ စစ်ဆေးခြင်း
                     is_admin = sender_id == recipient_id or "is_echo" in message
 
                     if is_admin:
+                        # Admin ဝင်ဖြေလျှင် AI ကို ခေတ္တရပ်ရန် မှတ်သားသည်
                         actual_customer_id = messaging_event.get("recipient", {}).get("id")
                         if actual_customer_id:
                             paused_conversations[actual_customer_id] = time.time()
                         continue
 
                     if user_text:
+                        # AI ကို ပြန်ဖွင့်ရန် Keyword
                         if user_text.lower() == "ai resume":
                             if sender_id in paused_conversations:
                                 del paused_conversations[sender_id]
                                 send_message(sender_id, "AI စနစ် ပြန်လည်အသက်ဝင်သွားပါပြီရှင်။")
                                 continue
 
+                        # Admin ဝင်ဖြေထားလျှင် ၂၄ နာရီအတွင်း AI က ကျော်သွားမည်
                         last_admin_time = paused_conversations.get(sender_id)
                         if last_admin_time and (time.time() - last_admin_time < 86400):
                             continue
 
                         try:
+                            # ပိုမိုတည်ငြိမ်သော Gemini 1.5 Flash ကို အသုံးပြုခြင်း
                             response = client.models.generate_content(
-                                model="gemini-2.0-flash",
+                                model="gemini-1.5-flash",
                                 config={"system_instruction": AKARI_INSTRUCTION},
                                 contents=user_text
                             )
                             reply_text = response.text
                         except Exception as e:
-                            print(f"Error: {e}")
+                            print(f"Gemini Error: {e}")
+                            # Error တက်ပါက သင်ခိုင်းထားသော အချိန်ဆွဲသည့်စာသား
                             reply_text = "အင်တာနက် အခက်အခဲလေးကြောင့် ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။ အရောင်းဝန်ထမ်းမှ မကြာမီ ပြန်လည်ဖြေကြားပေးပါ့မယ်ရှင်။"
 
                         send_message(sender_id, reply_text)
+                        
     return "ok", 200
 
 def send_message(recipient_id, message_text):
     url = f"https://graph.facebook.com/v19.0/me/messages?access_token={FB_PAGE_ACCESS_TOKEN}"
     payload = {"recipient": {"id": recipient_id}, "message": {"text": message_text}}
-    requests.post(url, json=payload)
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"FB Send Error: {e}")
 
 if __name__ == "__main__":
-    # Render ၏ Port Error ကို ဖြေရှင်းရန် PORT variable ကို သုံးထားသည်
+    # Render ၏ Port Error ကို ဖြေရှင်းရန်
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
