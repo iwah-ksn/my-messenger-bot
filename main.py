@@ -11,13 +11,26 @@ FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
 FB_VERIFY_TOKEN = "my_secret_bot_token"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Gemini Setup - API Version ကို တိုက်ရိုက်သတ်မှတ်သည်
+# Gemini Setup
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Error 404 ကို ကျော်လွှားရန် model name ကို တိကျစွာ ရေးသားခြင်း
+# သုံးလို့ရတဲ့ model စာရင်းကို Render Log မှာ ကြည့်နိုင်ရန် (Debug)
+print("--- Checking Available Models ---")
+try:
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            print(f"Found Model: {m.name}")
+except Exception as e:
+    print(f"Error listing models: {e}")
+
+# Model သတ်မှတ်ခြင်း (Gemini 2.0 Flash သို့ ပြောင်းလဲထားသည်)
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction="သင်သည် Akari - ဧကရီ အဝတ်အထည်ဆိုင်၏ ယဉ်ကျေးပျူငှာသော အရောင်းဝန်ထမ်းဖြစ်ပါသည်။ ရှင်/ရှင့် သုံးနှုန်းပြီး ဖြေပေးပါ။"
+    model_name="gemini-2.0-flash",
+    system_instruction="""
+မင်းရဲ့အမည်က 'Akari - ဧကရီ' (Akari Life Wear) Online Store ရဲ့ အမျိုးသမီးအရောင်းဝန်ထမ်း ဖြစ်ပါတယ်။
+1. စကားလုံးတိုင်းမှာ 'ရှင်/ရှင့်' ကို မပျက်မကွက် ထည့်သုံးပါ။
+2. ညဝတ်အင်္ကျီ၊ စက်ပန်းထိုးထည်နှင့် ချိတ်ထဘီများ ရောင်းသည်။
+"""
 )
 
 paused_conversations = {}
@@ -41,6 +54,7 @@ def webhook():
                     message = messaging_event["message"]
                     user_text = message.get("text")
                     
+                    # Admin ဝင်ဖြေလျှင် AI ကို ခေတ္တရပ်ရန်
                     is_admin = sender_id == recipient_id or "is_echo" in message
                     if is_admin:
                         actual_customer_id = messaging_event.get("recipient", {}).get("id")
@@ -54,13 +68,11 @@ def webhook():
                             continue
 
                         try:
-                            # ဤနေရာတွင် Generation လုပ်ဆောင်ပုံ ပြောင်းထားသည်
                             response = model.generate_content(user_text)
                             reply_text = response.text
                         except Exception as e:
-                            print(f"Gemini API Error: {e}")
-                            # Error ဆက်တက်နေပါက Log ထဲတွင် အသေးစိတ်ကြည့်နိုင်ရန် print ထုတ်ထားသည်
-                            reply_text = "တောင်းပန်ပါတယ်ရှင်။ စနစ်အနည်းငယ် ကြန့်ကြာနေလို့ ခဏလေး စောင့်ပေးပါဦးနော်။"
+                            print(f"Gemini Error: {e}")
+                            reply_text = "အင်တာနက် အခက်အခဲလေးကြောင့် ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။"
 
                         send_message(sender_id, reply_text)
     return "ok", 200
@@ -71,5 +83,6 @@ def send_message(recipient_id, message_text):
     requests.post(url, json=payload)
 
 if __name__ == "__main__":
+    # Render Port Binding
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
