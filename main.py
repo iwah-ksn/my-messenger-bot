@@ -1,29 +1,17 @@
 import os
 from flask import Flask, request
 import requests
-import google.generativeai as genai
+from google import genai
 
 app = Flask(__name__)
 
+# Environment Variables
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
 FB_VERIFY_TOKEN = "my_secret_bot_token"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-genai.configure(api_key=GEMINI_API_KEY)
-
-# အလုပ်လုပ်နိုင်တဲ့ model နာမည်ကို ရှာဖွေခြင်း
-def get_working_model():
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                return m.name
-        return 'gemini-pro' # default
-    except:
-        return 'gemini-pro'
-
-current_model_name = get_working_model()
-model = genai.GenerativeModel(current_model_name)
-print(f"Using model: {current_model_name}")
+# Gemini Client အသစ်
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 @app.route("/", methods=['GET'])
 def verify():
@@ -43,10 +31,14 @@ def webhook():
                     
                     if user_text:
                         try:
-                            response = model.generate_content(user_text)
+                            # Gemini 2.0 Flash ကို သုံးထားပါသည်
+                            response = client.models.generate_content(
+                                model="gemini-2.0-flash", 
+                                contents=user_text
+                            )
                             reply_text = response.text
                         except Exception as e:
-                            print(f"AI Error: {e}")
+                            print(f"Gemini Error: {e}")
                             reply_text = "စနစ် အနည်းငယ် ကြန့်ကြာနေလို့ နောက်မှ ပြန်မေးပေးပါခင်ဗျာ။"
 
                         send_message(sender_id, reply_text)
