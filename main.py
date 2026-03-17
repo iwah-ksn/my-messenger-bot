@@ -55,7 +55,7 @@ def webhook():
                             continue
 
                         try:
-                            # Model Name ကို အောက်ပါအတိုင်း တိကျစွာ ပြောင်းလဲထားသည်
+                            # ဤနေရာတွင် Model နာမည်ကို အမှားအယွင်းမရှိစေရန် ပြင်ဆင်ထားသည်
                             response = client.models.generate_content(
                                 model="gemini-1.5-flash", 
                                 config={"system_instruction": AKARI_INSTRUCTION},
@@ -63,7 +63,8 @@ def webhook():
                             )
                             reply_text = response.text
                         except Exception as e:
-                            print(f"Gemini Error: {e}")
+                            # Error တက်ပါက Log တွင် ပြပေးမည်
+                            print(f"Gemini API Error: {e}")
                             reply_text = "တောင်းပန်ပါတယ်ရှင်။ ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။"
 
                         send_message(sender_id, reply_text)
@@ -72,9 +73,12 @@ def webhook():
 def send_message(recipient_id, message_text):
     url = f"https://graph.facebook.com/v19.0/me/messages?access_token={FB_PAGE_ACCESS_TOKEN}"
     payload = {"recipient": {"id": recipient_id}, "message": {"text": message_text}}
-    requests.post(url, json=payload)
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"FB Send Error: {e}")
 
-# Render Port Error ကို ဖြေရှင်းရန် အရေးကြီးဆုံးအပိုင်း
+# Render Port Binding အတွက် အရေးကြီးသောအပိုင်း
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
