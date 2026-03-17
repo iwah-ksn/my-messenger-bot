@@ -2,7 +2,7 @@ import os
 import time
 from flask import Flask, request
 import requests
-import google.generativeai as genai
+from google import genai
 
 app = Flask(__name__)
 
@@ -11,14 +11,18 @@ FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
 FB_VERIFY_TOKEN = "my_secret_bot_token"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Gemini Setup (တည်ငြိမ်သော Library အဟောင်းပုံစံ)
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction="မင်းရဲ့အမည်က 'Akari - ဧကရီ' ဖြစ်ပါတယ်။ ယဉ်ကျေးပျူငှာသော အရောင်းဝန်ထမ်းအဖြစ် ရှင်/ရှင့် သုံးပြီး ဖြေပေးပါ။"
-)
+# Gemini Client အသစ် သတ်မှတ်ခြင်း
+client = genai.Client(api_key=GEMINI_API_KEY)
 
+# Admin ဝင်ဖြေလျှင် ခေတ္တရပ်ရန် memory
 paused_conversations = {}
+
+AKARI_INSTRUCTION = """
+မင်းရဲ့အမည်က 'Akari - ဧကရီ' (Akari Life Wear) Online Store ရဲ့ အမျိုးသမီးအရောင်းဝန်ထမ်း ဖြစ်ပါတယ်။
+1. Customer က 'နေကောင်းလား' လို့မေးရင် 'နေကောင်းပါတယ်ရှင်။ Akari - ဧကရီ ကူညီပေးပါရစေရှင်' လို့ပဲ ဖြေပါ။
+2. စကားလုံးတိုင်းမှာ 'ရှင်/ရှင့်' ကို မပျက်မကွက် ထည့်သုံးပါ။
+3. ညဝတ်အင်္ကျီ၊ စက်ပန်းထိုးထည်နှင့် ချိတ်ထဘီများ ရောင်းသည်။
+"""
 
 @app.route("/", methods=['GET'])
 def verify():
@@ -39,7 +43,7 @@ def webhook():
                     message = messaging_event["message"]
                     user_text = message.get("text")
                     
-                    # Admin ဝင်ဖြေလျှင် ခေတ္တရပ်ရန်
+                    # Admin (Page Owner) က Inbox ထဲကနေ စာပြန်နေခြင်း ရှိမရှိ စစ်ခြင်း
                     is_admin = sender_id == recipient_id or "is_echo" in message
                     if is_admin:
                         actual_customer_id = messaging_event.get("recipient", {}).get("id")
@@ -48,17 +52,22 @@ def webhook():
                         continue
 
                     if user_text:
+                        # Admin ဝင်ဖြေထားလျှင် ၂၄ နာရီအတွင်း AI က ကျော်သွားမည်
                         last_admin_time = paused_conversations.get(sender_id)
                         if last_admin_time and (time.time() - last_admin_time < 86400):
                             continue
 
                         try:
-                            # ဤနေရာတွင် Generation လုပ်ဆောင်ပုံ ပြောင်းထားသည်
-                            response = model.generate_content(user_text)
+                            # 404 Error ကို ကျော်လွှားရန် Model နာမည်ကို တိုက်ရိုက်ခေါ်ယူခြင်း
+                            response = client.models.generate_content(
+                                model="gemini-1.5-flash", 
+                                config={"system_instruction": AKARI_INSTRUCTION},
+                                contents=user_text
+                            )
                             reply_text = response.text
                         except Exception as e:
                             print(f"Gemini API Error: {e}")
-                            reply_text = "စနစ်အနည်းငယ် ကြန့်ကြာနေလို့ ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။"
+                            reply_text = "တောင်းပန်ပါတယ်ရှင်။ စနစ်အနည်းငယ် ကြန့်ကြာနေလို့ ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။"
 
                         send_message(sender_id, reply_text)
     return "ok", 200
@@ -66,8 +75,12 @@ def webhook():
 def send_message(recipient_id, message_text):
     url = f"https://graph.facebook.com/v19.0/me/messages?access_token={FB_PAGE_ACCESS_TOKEN}"
     payload = {"recipient": {"id": recipient_id}, "message": {"text": message_text}}
-    requests.post(url, json=payload)
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"FB Send Error: {e}")
 
 if __name__ == "__main__":
+    # Render Port Binding အတွက်
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
