@@ -1,30 +1,21 @@
 import os
 import time
-from flask import Flask, request
+from flask import Flask, request, make_response
 import requests
 import google.generativeai as genai
 
 app = Flask(__name__)
 
 # --- Configuration ---
-# Render Environment Variables ထဲမှာ ထည့်ထားရမည့် Key များ
+# Render Environment Variables ထဲမှာ ဒီ Key တွေကို သေချာထည့်ပေးပါရှင်
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN")
-FB_VERIFY_TOKEN = "my_secret_bot_token"
+FB_VERIFY_TOKEN = "my_secret_bot_token"  # Facebook Portal ထဲမှာ ဒါကိုပဲ ပြန်ရိုက်ထည့်ပါ
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # Gemini Setup
 genai.configure(api_key=GEMINI_API_KEY)
 
-# --- Debug: ရရှိနိုင်သော Model စာရင်းကို Log တွင်ထုတ်ကြည့်ခြင်း ---
-print("--- Checking Available Models ---")
-try:
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            print(f"Found Model: {m.name}")
-except Exception as e:
-    print(f"Error listing models: {e}")
-
-# Quota အသက်သာဆုံးနှင့် အတည်ငြိမ်ဆုံး 1.5 Flash ကို သုံးထားသည်
+# AI Model သတ်မှတ်ခြင်း (1.5 Flash - မြန်ဆန်ပြီး ဈေးသက်သာသည်)
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
     system_instruction="""
@@ -32,17 +23,28 @@ model = genai.GenerativeModel(
 1. စကားလုံးတိုင်းမှာ 'ရှင်/ရှင့်' ကို မပျက်မကွက် ထည့်သုံးပါ။
 2. ညဝတ်အင်္ကျီ၊ စက်ပန်းထိုးထည်နှင့် ချိတ်ထဘီများ ရောင်းသည်။ ယဉ်ကျေးပျူငှာစွာ ဖြေကြားပေးပါ။
 3. မန္တလေးအခြေစိုက် Online Shop ဖြစ်သည်။
+4. ဝယ်ယူသူကို 'မမ/ညီမလေး' ဟု ရင်းနှီးစွာ ခေါ်ဝေါ်ပါ။
 """
 )
 
+# Admin ဝင်ဖြေထားလျှင် AI ကို ခေတ္တရပ်ထားရန် Memory
 paused_conversations = {}
 
+# --- 1. Webhook Verification (Facebook နှင့် ချိတ်ဆက်သည့်အပိုင်း) ---
 @app.route("/", methods=['GET'])
 def verify():
-    if request.args.get("hub.verify_token") == FB_VERIFY_TOKEN:
-        return request.args.get("hub.challenge")
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+
+    if mode == "subscribe" and token == FB_VERIFY_TOKEN:
+        print("WEBHOOK_VERIFIED SUCCESSFULLY")
+        return challenge, 200
+    
+    print("WEBHOOK_VERIFICATION_FAILED")
     return "Verification failed", 403
 
+# --- 2. Message Handling (စာများ လက်ခံပြီး AI နှင့် ပြန်ဖြေသည့်အပိုင်း) ---
 @app.route("/", methods=['POST'])
 def webhook():
     data = request.json
@@ -51,46 +53,53 @@ def webhook():
             for messaging_event in entry.get("messaging", []):
                 sender_id = messaging_event["sender"]["id"]
                 recipient_id = messaging_event["recipient"]["id"]
-                
+
+                # စာသား (Text) ပါလာပါက
                 if messaging_event.get("message"):
                     message = messaging_event["message"]
-                    user_text = message.get("text")
                     
-                    # Admin ဝင်ဖြေလျှင် AI ခေတ္တရပ်ရန်
-                    is_admin = sender_id == recipient_id or "is_echo" in message
-                    if is_admin:
-                        actual_customer_id = messaging_event.get("recipient", {}).get("id")
-                        if actual_customer_id:
-                            paused_conversations[actual_customer_id] = time.time()
+                    # Admin (သို့မဟုတ်) Page ကိုယ်တိုင် ပြန်ဖြေနေခြင်း ရှိမရှိ စစ်ဆေးခြင်း
+                    if "is_echo" in message:
+                        # Admin ဝင်ဖြေလျှင် AI ကို ၂၄ နာရီ (၈၆၄၀၀ စက္ကန့်) ရပ်ထားမည်
+                        paused_conversations[recipient_id] = time.time()
                         continue
 
+                    user_text = message.get("text")
                     if user_text:
-                        # Admin ဝင်ဖြေထားလျှင် ၂၄ နာရီအတွင်း AI က ကျော်သွားမည်
+                        # Admin ဝင်ဖြေထားတာ ရှိမရှိ စစ်ဆေးခြင်း
                         last_admin_time = paused_conversations.get(sender_id)
                         if last_admin_time and (time.time() - last_admin_time < 86400):
+                            print(f"AI Paused for {sender_id} (Admin is replying)")
                             continue
 
                         try:
-                            # AI Response ယူခြင်း
+                            # Gemini AI ထံမှ အဖြေတောင်းခြင်း
                             response = model.generate_content(user_text)
                             reply_text = response.text
                         except Exception as e:
-                            # Quota Error တက်ပါက Log တွင်ပြရန်
                             print(f"Gemini API Error: {e}")
                             reply_text = "တောင်းပန်ပါတယ်ရှင်။ စနစ်အနည်းငယ် ကြန့်ကြာနေလို့ ခဏလေး စောင့်ပေးပါဦးနော် မမရှင့်။"
 
+                        # Facebook သို့ အဖြေပြန်ပို့ခြင်း
                         send_message(sender_id, reply_text)
+
     return "ok", 200
 
+# --- 3. Messenger သို့ စာပြန်ပို့သည့် Function ---
 def send_message(recipient_id, message_text):
     url = f"https://graph.facebook.com/v19.0/me/messages?access_token={FB_PAGE_ACCESS_TOKEN}"
-    payload = {"recipient": {"id": recipient_id}, "message": {"text": message_text}}
+    payload = {
+        "recipient": {"id": recipient_id},
+        "message": {"text": message_text}
+    }
     try:
-        requests.post(url, json=payload)
+        r = requests.post(url, json=payload)
+        if r.status_code != 200:
+            print(f"FB Send Error Detail: {r.text}")
     except Exception as e:
-        print(f"FB Send Error: {e}")
+        print(f"FB Request Error: {e}")
 
+# --- Render Port Binding ---
 if __name__ == "__main__":
-    # Render Port Binding
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
