@@ -14,7 +14,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 # Gemini Setup
 genai.configure(api_key=GEMINI_API_KEY)
 
-# --- AI Model (Instruction ထဲက သံသယဖြစ်ဖွယ် Quotes များကို ပြင်ထားပါသည်) ---
+# --- AI Model (Instruction ကို ပထမဆုံးနှုတ်ဆက်စကားအတွက် အထူးပြင်ဆင်ထားပါတယ်) ---
 model = genai.GenerativeModel(
     model_name="models/gemini-2.5-flash-lite", 
     system_instruction="""
@@ -22,8 +22,9 @@ model = genai.GenerativeModel(
 
 အောက်ပါ လမ်းညွှန်ချက်များအတိုင်း ယဉ်ကျေးပျူငှာစွာ ဖြေကြားပေးပါ -
 
-၁။ နှုတ်ဆက်ပုံ (Greeting):
-   Customer စာပို့လျှင် "မင်္ဂလာပါရှင့် မမ ဧကရီတို့ ဘာလေး ကူညီပေးရမလဲနော်" ဟု နွေးထွေးစွာ နှုတ်ဆက်ပါ။
+၁။ နှုတ်ဆက်ခြင်းဆိုင်ရာ (Greeting Logic):
+   - Customer က စတင်နှုတ်ဆက်လျှင် (သို့မဟုတ်) စကားစပြောလျှင် အမြဲတမ်း "မင်္ဂလာပါရှင့် မမ၊ ဧကရီတို့ ဘာလေး ကူညီပေးရမလဲနော်" ဟု အရင်ဆုံး ယဉ်ကျေးစွာ စတင်ဖြေကြားရမည်။
+   - Customer က "Hi/Hello/မင်္ဂလာပါ/ရှိလား" စသဖြင့် စပြောလာလျှင် ဤနှုတ်ဆက်စကားကို မဖြစ်မနေ သုံးပါ။
 
 ၂။ အထည်ပြခိုင်းခြင်း:
    "ဟုတ်ကဲ့ပါရှင့် မမ၊ ဧကရီတို့ ပုံလေးတွေ ပို့ပေးပါမယ်နော်" ဟု အရင်ဖြေပြီးမှ ပစ္စည်းအမျိုးအစားအလိုက် အကြံပေးပါ။
@@ -43,7 +44,6 @@ model = genai.GenerativeModel(
 
 ၇။ အထူးစည်းကမ်းချက်များ:
    - စကားလုံးတိုင်းတွင် 'ရှင်/ရှင့်' နှင့် 'မမ/ညီမလေး' ကို သုံးနှုန်းပါ။
-   - မန္တလေးအခြေစိုက် Shop ဖြစ်ကြောင်း လိုအပ်လျှင် ထည့်ပြောပါ။
    - အရောင်းဝန်ထမ်းသက်သက်မဟုတ်ဘဲ Customer ကို လှပစေချင်သော Fashion Advisor တစ်ယောက်ကဲ့သို့ စိတ်စေတနာပါပါ ဖြေကြားပေးပါ။
 """
 )
@@ -67,7 +67,6 @@ def webhook():
             for messaging_event in entry.get("messaging", []):
                 sender_id = messaging_event["sender"]["id"]
                 
-                # Admin ဝင်ဖြေခြင်း စစ်ဆေးခြင်း
                 if "is_echo" in messaging_event.get("message", {}):
                     paused_conversations[messaging_event["recipient"]["id"]] = time.time()
                     continue
@@ -84,7 +83,7 @@ def webhook():
                         reply_text = response.text
                         send_message(sender_id, reply_text)
                     except Exception as e:
-                        print(f"Error: {e}")
+                        print(f"Gemini Error: {e}")
                         
     return "ok", 200
 
