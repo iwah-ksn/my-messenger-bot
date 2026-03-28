@@ -1,4 +1,4 @@
-=import os
+import os
 import time
 from flask import Flask, request
 import requests
